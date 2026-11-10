@@ -53,7 +53,8 @@ If you change a script in `scripts/`, run `shellcheck` on it.
 - Keep the safety rules in the README's [How it works](README.md#how-it-works)
   and [Security](README.md#security) sections: one owner process, operations
   serialized, writes never replayed, no secrets or memory content in logs.
-- Update the README when behavior, commands, or configuration change.
+- Update the README when behavior, commands, or configuration change, and add
+  user-visible changes under `Unreleased` in [CHANGELOG.md](CHANGELOG.md).
 - New providers follow [Adding a provider](README.md#adding-a-provider).
 
 ## Pull requests

@@ -462,9 +462,13 @@ scripts/smoke.sh <mnemosyne python> <copy of mnemosyne.db>   # end to end, on a 
 make install && make logs                                     # deploy a checkout to the local service
 ```
 
-To release, push a `vX.Y.Z` tag. The release workflow runs the tests, then
+To release, move the `Unreleased` entries in [CHANGELOG.md](CHANGELOG.md)
+under the new version, commit, and push a `vX.Y.Z` tag. The release workflow runs the tests,
 [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`) builds the binaries,
-archives, and `checksums.txt` and publishes them as a GitHub release.
+archives, and `checksums.txt`, and `gh release create --generate-notes`
+publishes them as a GitHub release with notes from the merged pull requests
+and commits since the previous tag. A tag with a suffix, such as
+`v0.2.0-rc.1`, becomes a pre-release.
 
 The Mnemosyne tests against a real installation run when `MSM_TEST_PYTHON` and
 `MSM_TEST_DB` point at the interpreter and a database copy. Never use a live

@@ -19,10 +19,18 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -race ./...
+      # GoReleaser only builds the archives and checksums.txt; gh publishes them.
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: release --clean --skip=publish
+      - name: Create the GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=
+          case $TAG in *-*) prerelease=--prerelease ;; esac
+          gh release create "$TAG" --verify-tag --generate-notes --title "$TAG" $prerelease \
+            dist/*.tar.gz dist/checksums.txt
