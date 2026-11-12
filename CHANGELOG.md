@@ -7,6 +7,12 @@ also lists the pull requests and commits it contains.
 
 ## [Unreleased]
 
+### Added
+
+- Landing page, `docs/index.html`, for GitHub Pages.
+
+## [0.0.1] - 2026-11-10
+
 First release.
 
 ### Added
@@ -29,4 +35,5 @@ First release.
   Claude Code, OpenCode, Pi, Codex, or another agent with its own key.
 - Prebuilt binaries for macOS and Linux (amd64, arm64) with checksums.
 
-[Unreleased]: https://github.com/pixie-sh/memory-sharing-mcp/commits/main
+[Unreleased]: https://github.com/pixie-sh/memory-sharing-mcp/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/pixie-sh/memory-sharing-mcp/releases/tag/v0.0.1

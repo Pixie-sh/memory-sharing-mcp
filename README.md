@@ -131,7 +131,7 @@ Download a prebuilt binary for macOS or Linux (amd64 or arm64) from
 against `checksums.txt`, and unpack it:
 
 ```bash
-v=0.1.0 os=darwin arch=arm64   # or linux / amd64
+v=0.0.1 os=darwin arch=arm64   # or linux / amd64
 curl -LO https://github.com/pixie-sh/memory-sharing-mcp/releases/download/v$v/memory-sharing-mcp_${v}_${os}_${arch}.tar.gz
 curl -LO https://github.com/pixie-sh/memory-sharing-mcp/releases/download/v$v/checksums.txt
 shasum -a 256 --ignore-missing -c checksums.txt
