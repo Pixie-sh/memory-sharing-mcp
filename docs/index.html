@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="One shared memory store for Claude Code, Pi, OpenCode, Codex and any other MCP client, behind one authenticated service.">
+<title>memory-sharing-mcp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;800&display=swap">
+<style>
+/* Layout: pixie.sh's look — black ground, white Inter, and the red/green/blue channel offset
+   on headings, labels and card edges. Single dark theme by design. */
+:root {
+  --bg: #0a0a0a;
+  --black: #000;
+  --raise: #1a1a1a;
+  --ink: #fff;
+  --muted: #b9b9b9;
+  --line: #2a2a2a;
+  --r: #e52320;
+  --g: #00ff00;
+  --b: #0000ff;
+  --g-soft: rgba(0, 255, 0, 0.1);
+  --g-line: rgba(0, 255, 0, 0.3);
+  --body: Inter, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --split: -2px -1.2px 0 var(--r), -2.5px -0.6px 0 var(--g);
+  --edges: -3px 3px 0 var(--r), -1.5px -1.5px 0 var(--b), 2px -2px 0 var(--g);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 1.0625rem/1.6 var(--body); }
+.wrap {
+  max-width: 68rem; margin-inline: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: inherit; text-decoration-color: var(--g); text-underline-offset: 0.2em; transition: color 0.3s ease, text-shadow 0.3s ease; }
+a:hover { color: var(--g); text-shadow: -2px -0.1px 0 var(--b), -3px -0.1px 0 var(--r); }
+:focus-visible { outline: 2px solid var(--g); outline-offset: 3px; }
+code, pre, .mono { font-family: var(--mono); }
+p code, li code, td code { font-size: 0.88em; color: var(--g); background: var(--g-soft); padding: 0.08em 0.35em; border-radius: 3px; }
+h1, h2, h3 { font-family: var(--body); text-wrap: balance; margin: 0; }
+p { margin: 0; max-width: 62ch; }
+
+/* top bar */
+.top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; padding-block: 1.25rem; }
+.top .name { font: 700 1rem var(--body); letter-spacing: -0.01em; text-shadow: var(--split); }
+.top nav { display: flex; gap: 1.5rem; font-size: 0.95rem; }
+.top nav a { text-decoration: none; }
+
+/* hero */
+.hero { padding-block: 3.5rem 4rem; display: flex; flex-direction: column; gap: 2rem; }
+h1 {
+  font-size: clamp(2.5rem, 7.4vw, 5.5rem); font-weight: 800; line-height: 1; letter-spacing: -0.04em; max-width: 14ch;
+  padding-left: 0.1em;
+  text-shadow: -0.06em 0.04em 0 var(--r), -0.06em -0.03em 0 var(--b), -0.08em -0.07em 0 var(--g);
+}
+h1 em { font-style: normal; }
+.lede { font-size: 1.25rem; font-weight: 300; line-height: 1.5; max-width: 54ch; }
+.cmd { display: flex; align-items: stretch; background: var(--black); color: var(--ink); max-width: 100%; width: fit-content; box-shadow: var(--edges); margin-left: 3px; }
+.cmd pre { margin: 0; padding: 0.9rem 1rem; overflow-x: auto; font-size: 0.9rem; min-width: 0; }
+.cmd pre::before { content: "$ "; color: var(--g); }
+.cmd button { font: 700 0.8rem var(--body); color: var(--g); background: var(--g-soft); border: 0; border-left: 2px solid var(--g); padding: 0 1.1rem; cursor: pointer; transition: background 0.2s ease; }
+.cmd button:hover { background: rgba(0, 255, 0, 0.2); }
+.fine { font-size: 0.92rem; color: var(--muted); }
+
+/* bands: the green rule with its blue echo, as on pixie.sh's track line */
+section { padding-block: 4rem; display: flex; flex-direction: column; gap: 2rem; position: relative; }
+section::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--g); box-shadow: -3px 2px 0 var(--b); }
+.label { font: 400 0.95rem var(--body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); text-shadow: var(--split); }
+h2 { font-size: clamp(1.9rem, 4vw, 3rem); font-weight: 700; line-height: 1.08; letter-spacing: -0.03em; max-width: 22ch; }
+h3 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+.head { display: flex; flex-direction: column; gap: 0.85rem; }
+.head p { font-weight: 300; }
+
+/* before / after figure */
+.fig { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 2rem; padding-inline: 3px; }
+.panel { background: var(--black); box-shadow: var(--edges); padding: 1.35rem; display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+.panel h3 { font: 700 0.8rem var(--body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.rows { display: grid; gap: 0.5rem; }
+.row { display: grid; grid-template-columns: 1fr 2.5rem 1fr; align-items: center; }
+.chip { font: 700 0.85rem var(--body); letter-spacing: 0.02em; border: 1px solid var(--line); background: var(--raise); padding: 0.55rem 0.7rem; min-width: 0; overflow-wrap: anywhere; }
+.chip.silo { border: 1px dashed var(--r); background: transparent; color: var(--muted); font-weight: 400; }
+.wire { height: 0; border-top: 1px dashed var(--muted); }
+.merge { display: grid; grid-template-columns: 1fr 2.5rem 1fr; align-items: stretch; }
+.merge .rows { align-content: center; }
+.merge .bus { border: 2px solid var(--g); border-left: 0; margin-block: 1.1rem; box-shadow: 2px 1px 0 var(--b); }
+.owner { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; }
+.owner .chip { border: 2px solid var(--g); background: var(--g-soft); color: var(--g); }
+.owner .down { font: 400 0.8rem var(--mono); color: var(--muted); padding-left: 0.7rem; }
+.panel p { font-size: 0.97rem; color: var(--muted); }
+
+/* lists of points */
+.points { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 2rem 2.5rem; }
+.points div { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.points h3 { text-shadow: -2px 1px 0 var(--b); }
+.points p { font-size: 1rem; color: var(--muted); }
+
+/* tables */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.7rem 1rem 0.7rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 700 0.75rem var(--body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--r); }
+td.mono, td .mono { font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.yes { color: var(--g); font-weight: 700; }
+.no { color: var(--muted); }
+
+/* tabs */
+.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tabs button { font: 700 0.85rem var(--body); color: var(--muted); background: transparent; border: 2px solid var(--line); padding: 0.45rem 0.85rem; cursor: pointer; transition: all 0.2s ease; }
+.tabs button:hover { color: var(--g); border-color: var(--g-line); }
+.tabs button[aria-selected="true"] { color: var(--g); border-color: var(--g); background: var(--g-soft); }
+.snippet { background: var(--black); color: var(--ink); border: 2px solid rgba(0, 255, 0, 0.2); overflow-x: auto; }
+.snippet pre { margin: 0; padding: 1rem 1.1rem; font-size: 0.88rem; line-height: 1.55; }
+.snippet .where { display: block; color: var(--g); opacity: 0.7; }
+
+.status { display: grid; gap: 0.7rem; padding: 0; margin: 0; list-style: none; max-width: 62ch; }
+.status li { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.75rem; align-items: baseline; }
+.status .tag { font: 700 0.75rem var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.status .tag.ok { color: var(--g); }
+
+footer { border-top: 1px solid var(--r); box-shadow: 0 -2px 0 -1px var(--b); padding-block: 2rem 3rem; font-size: 0.92rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="name">memory-sharing-mcp</span>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="#connect">Connect</a>
+      <a href="https://github.com/pixie-sh/memory-sharing-mcp">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>Every agent CLI remembers. <em>None of them remember the same thing.</em></h1>
+    <p class="lede">memory-sharing-mcp gives Claude Code, Pi, OpenCode, Codex and any other MCP client one shared memory store, behind one authenticated service. What you teach one agent, the next one already knows.</p>
+    <div class="cmd">
+      <pre id="install-cmd">go install github.com/pixie-sh/memory-sharing-mcp/cmd/memory-sharing-mcp@latest</pre>
+      <button type="button" id="copy-install" data-copy="install-cmd">Copy</button>
+    </div>
+    <p class="fine">Go 1.26+, macOS or Linux. Prebuilt binaries are on the <a href="https://github.com/pixie-sh/memory-sharing-mcp/releases">releases page</a>. MIT licensed.</p>
+  </div>
+
+  <section id="problem">
+    <div class="head">
+      <span class="label">The problem</span>
+      <h2>A team on four harnesses keeps four separate memories.</h2>
+      <p>Nobody on a team uses a single agent any more. One person plans in Claude Code, reviews in Codex and runs long jobs in Pi. Each harness keeps its own notes, in its own format, in its own directory.</p>
+    </div>
+
+    <div class="fig">
+      <div class="panel">
+        <h3>One memory per harness</h3>
+        <div class="rows">
+          <div class="row"><span class="chip">Claude Code</span><span class="wire"></span><span class="chip silo">its own memory</span></div>
+          <div class="row"><span class="chip">Pi</span><span class="wire"></span><span class="chip silo">its own memory</span></div>
+          <div class="row"><span class="chip">OpenCode</span><span class="wire"></span><span class="chip silo">its own memory</span></div>
+          <div class="row"><span class="chip">Codex</span><span class="wire"></span><span class="chip silo">its own memory</span></div>
+        </div>
+        <p>The deploy gotcha you explained on Monday lives in one of these. Switch tools and you explain it again.</p>
+      </div>
+      <div class="panel">
+        <h3>One store, one owner</h3>
+        <div class="merge">
+          <div class="rows">
+            <span class="chip">Claude Code</span>
+            <span class="chip">Pi</span>
+            <span class="chip">OpenCode</span>
+            <span class="chip">Codex</span>
+          </div>
+          <span class="bus"></span>
+          <div class="owner">
+            <span class="chip">http serve</span>
+            <span class="down">↓ one call at a time</span>
+            <span class="chip">memory store</span>
+          </div>
+        </div>
+        <p>Every agent calls the same five tools. Only the gateway opens the database.</p>
+      </div>
+    </div>
+
+    <div class="points">
+      <div><h3>You repeat yourself</h3><p>Preferences, decisions and project gotchas get taught once per tool, and drift apart as each copy ages.</p></div>
+      <div><h3>Context stops at the tool boundary</h3><p>A decision confirmed in one CLI is invisible to the agent you open next, so it re-asks or guesses.</p></div>
+      <div><h3>Sharing the file directly is unsafe</h3><p>Pointing several agents at the same database gives you concurrent writers, mismatched runtimes and no record of who wrote what.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="head">
+      <span class="label">How it works</span>
+      <h2>One process owns the store. Agents only talk to it.</h2>
+      <p>Agents connect over Streamable HTTP MCP or through a small stdio adapter, <code>mcp serve</code>. Scripts use the REST API. The gateway validates, authorizes and queues every call before it reaches the store.</p>
+    </div>
+    <div class="points">
+      <div><h3>One owner</h3><p><code>http serve</code> takes an exclusive lock on the store. A second owner refuses to start.</p></div>
+      <div><h3>One call at a time</h3><p>Operations reach the provider strictly in order. Recall updates the store too, so even reads are serialized.</p></div>
+      <div><h3>No replayed writes</h3><p>If a write's outcome is unknown, the call is reported as <code>indeterminate</code> and never retried automatically.</p></div>
+      <div><h3>Every write has an author</h3><p>Each agent can have its own API key. New memories record the key that wrote them as <code>agent_id</code>.</p></div>
+      <div><h3>Roles per key</h3><p>Read-only, read-write and maintenance. Delete and consolidation stay off until you enable them.</p></div>
+      <div><h3>Swappable store</h3><p>Stores plug in as providers. Mnemosyne works today; results follow mem0's memory format whichever store is behind it.</p></div>
+    </div>
+  </section>
+
+  <section id="proof">
+    <div class="head">
+      <span class="label">From the service log, 2026-11-10</span>
+      <h2>Three agents, three writes, two seconds.</h2>
+      <p>Claude Code, OpenCode and Pi each saved a test memory at the same moment. All three <code>remember</code> calls returned <code>ok</code>, and a recall from any of the three then listed all three entries.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Saved at</th><th>Source</th><th>ID</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">16:23:10</td><td class="mono">claude-code</td><td class="mono">mnemosyne:0f4b1f2c581f0d44</td></tr>
+          <tr><td class="mono">16:23:11</td><td class="mono">ocrobin</td><td class="mono">mnemosyne:e1304704a8c8d0ba</td></tr>
+          <tr><td class="mono">16:23:12</td><td class="mono">pi</td><td class="mono">mnemosyne:873f19227ff2b13f</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="connect">
+    <div class="head">
+      <span class="label">Connect</span>
+      <h2>Set up once per machine, then one entry per agent.</h2>
+      <p>From a checkout, <code>make setup</code> walks through the store, the key and the service. <code>make gen-config</code> then gives each agent its own key and config. By hand, each agent needs one stdio server entry:</p>
+    </div>
+    <div>
+      <div class="tabs" role="tablist" aria-label="Agent">
+        <button type="button" role="tab" id="tab-claude" aria-controls="snip" aria-selected="true" data-agent="claude">Claude Code</button>
+        <button type="button" role="tab" id="tab-pi" aria-controls="snip" aria-selected="false" data-agent="pi">Pi</button>
+        <button type="button" role="tab" id="tab-opencode" aria-controls="snip" aria-selected="false" data-agent="opencode">OpenCode</button>
+        <button type="button" role="tab" id="tab-codex" aria-controls="snip" aria-selected="false" data-agent="codex">Codex</button>
+        <button type="button" role="tab" id="tab-other" aria-controls="snip" aria-selected="false" data-agent="other">Other</button>
+      </div>
+    </div>
+    <div class="snippet" id="snip" role="tabpanel" aria-labelledby="tab-claude"><pre id="snip-pre"></pre></div>
+    <p class="fine">Claude Code, Pi and OpenCode are in daily use. The Codex entry follows its documented format and is not yet verified.</p>
+
+    <div class="head">
+      <h3>The five tools every agent gets</h3>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Tool</th><th>read-only</th><th>read-write</th><th>maintenance</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">memory_recall</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+          <tr><td class="mono">memory_stats</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+          <tr><td class="mono">memory_remember</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+          <tr><td class="mono">memory_forget</td><td class="no">no</td><td class="no">no</td><td>with <span class="mono">allow_forget</span></td></tr>
+          <tr><td class="mono">memory_sleep</td><td class="no">no</td><td class="no">no</td><td>with <span class="mono">allow_sleep</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="status">
+    <div class="head">
+      <span class="label">Status</span>
+      <h2>What works today, and what does not yet.</h2>
+    </div>
+    <ul class="status">
+      <li><span class="tag ok">Works</span><span>Local use on loopback with the Mnemosyne provider, including the macOS service.</span></li>
+      <li><span class="tag">Untested</span><span>The Linux systemd user unit is new and has not run on a real machine.</span></li>
+      <li><span class="tag">Planned</span><span>A mem0 provider.</span></li>
+      <li><span class="tag">Not yet</span><span>Documented remote access. The service listens on loopback only, so sharing one store across machines means a reverse proxy or tunnel you configure yourself.</span></li>
+    </ul>
+  </section>
+
+  <footer>
+    <span>MIT. Built on <a href="https://github.com/AxDSan/mnemosyne">Mnemosyne</a>, the <a href="https://modelcontextprotocol.io">Model Context Protocol</a> and mem0's memory format.</span>
+    <a href="https://github.com/pixie-sh/memory-sharing-mcp">github.com/pixie-sh/memory-sharing-mcp</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var snippets = {
+    claude: ['# all projects', 'claude mcp add --scope user memory -- memory-sharing-mcp mcp serve'],
+    pi: ['# ~/.pi/agent/mcp-adapter.json (pi-mcp-adapter)', '{\n  "mcpServers": {\n    "memory": { "command": "memory-sharing-mcp", "args": ["mcp", "serve"], "directTools": true }\n  }\n}'],
+    opencode: ['# ~/.config/opencode/opencode.json', '{\n  "mcp": {\n    "memory": { "type": "local", "command": ["memory-sharing-mcp", "mcp", "serve"], "enabled": true }\n  }\n}'],
+    codex: ['# ~/.codex/config.toml', '[mcp_servers.memory]\ncommand = "memory-sharing-mcp"\nargs = ["mcp", "serve"]'],
+    other: ['# any MCP client: a stdio server', 'command: memory-sharing-mcp\nargs:    mcp serve\n\n# or Streamable HTTP, with the key in that client\'s config\nhttp://127.0.0.1:8790/mcp\nAuthorization: Bearer <key>']
+  };
+  var pre = document.getElementById('snip-pre');
+  var panel = document.getElementById('snip');
+  var tabs = document.querySelectorAll('.tabs button');
+  function show(agent) {
+    pre.textContent = '';
+    var where = document.createElement('span');
+    where.className = 'where';
+    where.textContent = snippets[agent][0];
+    pre.appendChild(where);
+    pre.appendChild(document.createTextNode(snippets[agent][1]));
+    tabs.forEach(function (t) {
+      var on = t.dataset.agent === agent;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) panel.setAttribute('aria-labelledby', t.id);
+    });
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.agent); }); });
+  show('claude');
+
+  var btn = document.getElementById('copy-install');
+  btn.addEventListener('click', function () {
+    var el = document.getElementById(btn.dataset.copy);
+    function select() {
+      var r = document.createRange(); r.selectNodeContents(el);
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    }
+    try {
+      navigator.clipboard.writeText(el.textContent).then(function () {
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+      }, select);
+    } catch (e) { select(); }
+  });
+})();
+</script>
+</body>
+</html>
