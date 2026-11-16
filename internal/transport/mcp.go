@@ -75,18 +75,22 @@ func newServer(g *gateway.Gateway, log *slog.Logger) *mcp.Server {
 // error, so the HTTP exchange still returns 200.
 func runTool(ctx context.Context, g *gateway.Gateway, log *slog.Logger, req *mcp.CallToolRequest, name string, op gateway.Op) *mcp.CallToolResult {
 	start := time.Now()
+	var caller string
+	if req.Extra != nil {
+		caller = callerOf(req.Extra.Header)
+	}
 	key, ok := requestKey(req)
 	if !ok {
-		logCall(log, "mcp", name, "", "unauthorized", start)
+		logCall(log, "mcp", name, "", caller, "unauthorized", start)
 		return toolResult("unauthorized: no API key on request", true)
 	}
 	raw, err := g.Do(ctx, key, op)
 	if err != nil {
 		class, _, msg := outcome(err)
-		logCall(log, "mcp", name, key.ID, class, start)
+		logCall(log, "mcp", name, key.ID, caller, class, start)
 		return toolResult(fmt.Sprintf("%s: %s", class, msg), true)
 	}
-	logCall(log, "mcp", name, key.ID, "ok", start)
+	logCall(log, "mcp", name, key.ID, caller, "ok", start)
 	return toolResult(string(raw), false)
 }
 

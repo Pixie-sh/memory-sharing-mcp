@@ -230,7 +230,7 @@ memory-sharing-mcp install       # copy to ~/.local/bin, run http serve as a Lau
 memory-sharing-mcp uninstall     # remove the service and binary; keeps config, store, keys
 memory-sharing-mcp store init    # create an empty store for the configured provider
 memory-sharing-mcp http serve    # owner service in the foreground; logs JSON to stderr
-memory-sharing-mcp mcp serve     # stdio adapter for one agent
+memory-sharing-mcp mcp serve [--caller NAME]  # stdio adapter for one agent; NAME labels its calls in the log
 memory-sharing-mcp version
 ```
 
@@ -269,7 +269,8 @@ The quickest way is `make gen-config` from a checkout. It checks the
 installation, creates a key for one agent, writes that agent's config file to
 `~/.config/memory-sharing-mcp/agents/<agent>.json`, and then registers it
 (Claude Code, after asking) or prints the snippet to add. Name the agent with
-`AGENT`, or leave it out to choose from a menu:
+`AGENT`, or leave it out to choose from a menu. The agent name is also passed as
+`--caller`, so the service log shows which agent made each call:
 
 ```bash
 AGENT=claude make gen-config     # also: opencode, pi, codex, or any other name
@@ -285,7 +286,7 @@ a service may not see your shell's `PATH`, so use the absolute path from
 **Claude Code**, for all projects:
 
 ```bash
-claude mcp add --scope user memory -- memory-sharing-mcp mcp serve
+claude mcp add --scope user memory -- memory-sharing-mcp mcp serve --caller claude-code
 ```
 
 **Pi**, with [pi-mcp-adapter](https://www.npmjs.com/package/pi-mcp-adapter), in
@@ -295,7 +296,7 @@ names:
 ```json
 {
   "mcpServers": {
-    "memory": { "command": "memory-sharing-mcp", "args": ["mcp", "serve"], "directTools": true }
+    "memory": { "command": "memory-sharing-mcp", "args": ["mcp", "serve", "--caller", "pi"], "directTools": true }
   }
 }
 ```
@@ -305,7 +306,7 @@ names:
 ```toml
 [mcp_servers.memory]
 command = "memory-sharing-mcp"
-args = ["mcp", "serve"]
+args = ["mcp", "serve", "--caller", "codex"]
 ```
 
 **OpenCode**, in `~/.config/opencode/opencode.json`:
@@ -313,15 +314,16 @@ args = ["mcp", "serve"]
 ```json
 {
   "mcp": {
-    "memory": { "type": "local", "command": ["memory-sharing-mcp", "mcp", "serve"], "enabled": true }
+    "memory": { "type": "local", "command": ["memory-sharing-mcp", "mcp", "serve", "--caller", "opencode"], "enabled": true }
   }
 }
 ```
 
 **Any other MCP client**: a stdio server with command `memory-sharing-mcp` and
-arguments `mcp serve`. Clients that support Streamable HTTP with headers can
-instead use `http://127.0.0.1:8790/mcp` with `Authorization: Bearer <key>`,
-but the key is then stored in plain text in that client's config.
+arguments `mcp serve --caller <nickname>`. Clients that support Streamable HTTP
+with headers can instead use `http://127.0.0.1:8790/mcp` with
+`Authorization: Bearer <key>` and, optionally, `X-Caller: <nickname>`, but the
+key is then stored in plain text in that client's config.
 
 The Pi, Claude Code, and OpenCode setups are in daily use; Codex follows its
 documented format and is not yet verified.
@@ -358,6 +360,20 @@ project gotchas with `memory_remember`. Keep entries concise; never save secrets
 - One key per machine is enough. To tell agents apart in `agent_id`, give each
   agent its own key and its own small config file that sets `credential_file`,
   and add `--config <file>` before `mcp serve` in that agent's entry.
+- To see in the service log which agent made each call while they share a key,
+  add `--caller <nickname>` after `mcp serve` (or set `MSM_CALLER`). Each
+  `call` log line then carries `caller=<nickname>`. HTTP clients can send the
+  same nickname in an `X-Caller` header. It is self-reported and only labels
+  log lines; the key still decides what a caller may do. Without one, calls
+  still work and log `caller=""`, so you can add nicknames one agent at a time.
+- When several profiles of one agent share a server entry (for example a Claude
+  Code launcher next to plain `claude`, both using the user-scope `memory`
+  server), let the launcher export `MSM_CALLER` and give the entry a fallback:
+
+  ```bash
+  claude mcp add --scope user memory -- /bin/sh -c \
+    'exec memory-sharing-mcp mcp serve --caller "${MSM_CALLER:-claude-code}"'
+  ```
 - `http serve` must be running. The adapter waits up to 30 seconds for it at
   startup, so agents launched at login do not race the service. If the service
   goes away later, tool calls fail with a connection error and nothing is saved;

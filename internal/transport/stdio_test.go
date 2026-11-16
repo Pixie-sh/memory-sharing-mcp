@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ func startProxy(t *testing.T, endpoint, secret string) *mcp.ClientSession {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	cliT, srvT := mcp.NewInMemoryTransports()
-	go Proxy(ctx, endpoint, secret, srvT)
+	go Proxy(ctx, endpoint, secret, "", srvT)
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0"}, nil).Connect(ctx, cliT, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +123,7 @@ func TestProxyFailsOnBadKey(t *testing.T) {
 	defer cancel()
 	_, srvT := mcp.NewInMemoryTransports()
 	bad := "msm_0000000000000000_" + strings.Repeat("A", 43)
-	if err := Proxy(ctx, owner.URL+"/mcp", bad, srvT); err == nil {
+	if err := Proxy(ctx, owner.URL+"/mcp", bad, "", srvT); err == nil {
 		t.Fatal("bad key: no error")
 	}
 }
@@ -134,7 +135,7 @@ func TestProxyRefusesUnsafeEndpoints(t *testing.T) {
 		"https://example.com/mcp?key=x":     "must not contain credentials",
 	} {
 		_, srvT := mcp.NewInMemoryTransports()
-		if err := Proxy(t.Context(), endpoint, "msm_x", srvT); err == nil || !strings.Contains(err.Error(), want) {
+		if err := Proxy(t.Context(), endpoint, "msm_x", "", srvT); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", endpoint, err, want)
 		}
 	}
@@ -158,5 +159,38 @@ func TestProxyRejectsOversizedArgsAndStaysUsable(t *testing.T) {
 	}
 	if e.fb.count() != 1 {
 		t.Fatalf("backend called %d times, want 1 (stats only)", e.fb.count())
+	}
+}
+
+func TestCallerLogged(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cliT, srvT := mcp.NewInMemoryTransports()
+	go Proxy(ctx, e.url+"/mcp", e.rw, "pialfred", srvT)
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0"}, nil).Connect(ctx, cliT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	if _, err := callTool(t, cs, "memory_stats", nil); err != nil {
+		t.Fatal(err)
+	}
+	// An invalid nickname is dropped, not logged.
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, e.url+"/v1/stats", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer "+e.rw)
+	req.Header.Set(CallerHeader, "bad name")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	logs := e.logs.String()
+	if !strings.Contains(logs, "transport=mcp op=stats key="+e.rwID+" caller=pialfred") {
+		t.Errorf("mcp call not logged with caller:\n%s", logs)
+	}
+	if !strings.Contains(logs, `transport=rest op=stats key=`+e.rwID+` caller="" `) {
+		t.Errorf("invalid caller not dropped:\n%s", logs)
 	}
 }

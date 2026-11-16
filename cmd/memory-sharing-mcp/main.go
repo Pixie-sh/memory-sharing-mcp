@@ -40,7 +40,7 @@ commands:
   uninstall [--bin-dir DIR]
   store init
   http serve
-  mcp serve
+  mcp serve [--caller NAME]    NAME (default $MSM_CALLER) labels this agent's calls in the service log
   mcp keygen [--name N] [--role read-only|read-write|maintenance] [--print]
   mcp keys list
   mcp keys revoke <id>
@@ -96,9 +96,27 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprint(stderr, usageText)
 		return 2
 	}
-	if (cmd == "store init" || cmd == "http serve" || cmd == "mcp serve") && len(cargs) != 0 {
+	if (cmd == "store init" || cmd == "http serve") && len(cargs) != 0 {
 		fmt.Fprintf(stderr, "%s takes no arguments\n", cmd)
 		return 2
+	}
+
+	var caller string
+	if cmd == "mcp serve" {
+		sf := flag.NewFlagSet("mcp serve", flag.ContinueOnError)
+		sf.SetOutput(stderr)
+		sf.StringVar(&caller, "caller", os.Getenv("MSM_CALLER"), "nickname for this agent's calls in the service log")
+		if err := sf.Parse(cargs); err != nil {
+			return 2
+		}
+		if sf.NArg() != 0 {
+			fmt.Fprintln(stderr, "mcp serve takes no positional arguments")
+			return 2
+		}
+		if caller != "" && !transport.ValidCaller(caller) {
+			fmt.Fprintln(stderr, "error: --caller must be 1-64 letters, digits, '.', '_' or '-'")
+			return 2
+		}
 	}
 
 	path, explicit, err := configPath(*cfgFlag)
@@ -118,7 +136,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "http serve":
 		return report(stderr, httpServe(ctx, cfg, log, stderr))
 	case "mcp serve":
-		return report(stderr, mcpServe(ctx, cfg, log))
+		return report(stderr, mcpServe(ctx, cfg, caller, log))
 	case "mcp keygen":
 		return keygen(cargs, cfg, stdout, stderr)
 	default:
@@ -293,14 +311,14 @@ func storeInit(ctx context.Context, cfg config, stdout, stderr io.Writer) error 
 }
 
 // mcpServe forwards stdio MCP to the owner. stdout carries only MCP traffic.
-func mcpServe(ctx context.Context, cfg config, log *slog.Logger) error {
+func mcpServe(ctx context.Context, cfg config, caller string, log *slog.Logger) error {
 	secret, err := credential(cfg)
 	if err != nil {
 		return err
 	}
 	// The endpoint is not logged: Proxy has not yet rejected one carrying credentials.
-	log.Info("mcp serve started")
-	return transport.Proxy(ctx, cfg.Endpoint, secret, &mcp.StdioTransport{})
+	log.Info("mcp serve started", "caller", caller)
+	return transport.Proxy(ctx, cfg.Endpoint, secret, caller, &mcp.StdioTransport{})
 }
 
 // credential returns MSM_API_KEY if set, else the trimmed credential file, which must

@@ -24,6 +24,9 @@ import (
 const (
 	maxBody       = 256 << 10 // REST and MCP: fits maximal content even with every byte JSON-escaped, plus framing
 	indeterminate = "the operation may or may not have been applied; do not retry blindly"
+	// CallerHeader carries an optional, self-reported caller nickname for the logs.
+	// It is not authenticated: the key decides what a caller may do.
+	CallerHeader = "X-Caller"
 )
 
 // Handler returns the routes: /mcp (Streamable HTTP), /v1/* (REST), /healthz, and /readyz.
@@ -110,10 +113,11 @@ func bearerKey(ks *keys.Set, r *http.Request) (keys.Key, bool) {
 func rest[In any](g *gateway.Gateway, ks *keys.Set, log *slog.Logger, name string, mk func(In) gateway.Op) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		caller := callerOf(r.Header)
 		key, ok := bearerKey(ks, r)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid API key")
-			logCall(log, "rest", name, "", "unauthorized", start)
+			logCall(log, "rest", name, "", caller, "unauthorized", start)
 			return
 		}
 		var in In
@@ -124,19 +128,19 @@ func rest[In any](g *gateway.Gateway, ks *keys.Set, log *slog.Logger, name strin
 				status, class, msg = http.StatusRequestEntityTooLarge, "too_large", "body exceeds the size limit"
 			}
 			writeError(w, status, class, msg)
-			logCall(log, "rest", name, key.ID, class, start)
+			logCall(log, "rest", name, key.ID, caller, class, start)
 			return
 		}
 		raw, err := g.Do(r.Context(), key, mk(in))
 		if err != nil {
 			class, status, msg := outcome(err)
 			writeError(w, status, class, msg)
-			logCall(log, "rest", name, key.ID, class, start)
+			logCall(log, "rest", name, key.ID, caller, class, start)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(raw)
-		logCall(log, "rest", name, key.ID, "ok", start)
+		logCall(log, "rest", name, key.ID, caller, "ok", start)
 	})
 }
 
@@ -197,8 +201,30 @@ func writeError(w http.ResponseWriter, status int, class, msg string) {
 
 // logCall writes the one log line per request or tool call. It never includes the
 // secret, the Authorization header, or memory content.
-func logCall(log *slog.Logger, transport, op, keyID, outcome string, start time.Time) {
-	log.Info("call", "transport", transport, "op", op, "key", keyID, "outcome", outcome, "duration", time.Since(start))
+func logCall(log *slog.Logger, transport, op, keyID, caller, outcome string, start time.Time) {
+	log.Info("call", "transport", transport, "op", op, "key", keyID, "caller", caller, "outcome", outcome, "duration", time.Since(start))
+}
+
+// callerOf returns the X-Caller nickname, or "" when it is missing or not a ValidCaller.
+func callerOf(h http.Header) string {
+	if c := h.Get(CallerHeader); ValidCaller(c) {
+		return c
+	}
+	return ""
+}
+
+// ValidCaller reports whether s is a usable caller nickname: 1-64 bytes of
+// letters, digits, '.', '_' and '-', so it cannot forge or break a log line.
+func ValidCaller(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // isIdent reports whether s looks like an exception type name, so nothing else

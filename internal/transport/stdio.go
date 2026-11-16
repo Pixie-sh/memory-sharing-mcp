@@ -18,20 +18,24 @@ var Version = "dev"
 // maxToolArgs stays below the owner's MCP body limit, leaving room for JSON-RPC framing.
 const maxToolArgs = 200 << 10
 
-// bearer adds the API key to every request the owner client sends.
-type bearer string
+// bearer adds the API key, and the caller nickname if set, to every request the owner client sends.
+type bearer struct{ secret, caller string }
 
 func (b bearer) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
-	req.Header.Set("Authorization", "Bearer "+string(b))
+	req.Header.Set("Authorization", "Bearer "+b.secret)
+	if b.caller != "" {
+		req.Header.Set(CallerHeader, b.caller)
+	}
 	return http.DefaultTransport.RoundTrip(req)
 }
 
 // Proxy serves the owner's memory tools on downstream and forwards every call to the
 // owner at endpoint. It connects and lists the tools before serving, so an unreachable
 // owner or a rejected key fails here. It never starts a backend or opens the database.
-// It returns when the downstream session ends or ctx is done.
-func Proxy(ctx context.Context, endpoint, secret string, downstream mcp.Transport) error {
+// It returns when the downstream session ends or ctx is done. caller, if not empty,
+// is sent as the X-Caller nickname the owner logs.
+func Proxy(ctx context.Context, endpoint, secret, caller string, downstream mcp.Transport) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return fmt.Errorf("endpoint: %w", err)
@@ -50,7 +54,7 @@ func Proxy(ctx context.Context, endpoint, secret string, downstream mcp.Transpor
 	owner, list, err := connectOwner(sctx, client, &mcp.StreamableClientTransport{
 		Endpoint: endpoint,
 		HTTPClient: &http.Client{
-			Transport: bearer(secret),
+			Transport: bearer{secret, caller},
 			// Never send the key to a redirect target.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},

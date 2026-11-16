@@ -56,7 +56,7 @@ fi
 echo "3. Register the memory server with $agent"
 case $agent in
 claude)
-	cmd=(claude mcp add --scope user memory -- "$bin" --config "$cfg" mcp serve)
+	cmd=(claude mcp add --scope user memory -- "$bin" --config "$cfg" mcp serve --caller "$agent")
 	echo "   ${cmd[*]}"
 	if command -v claude >/dev/null && [ -t 0 ]; then
 		read -rp "   Run it now? [y/N] " yn
@@ -67,19 +67,19 @@ claude)
 	;;
 pi)
 	echo "   Add to ~/.pi/agent/mcp-adapter.json (needs pi-mcp-adapter):"
-	echo "   {\"mcpServers\": {\"memory\": {\"command\": $(json "$bin"), \"args\": [\"--config\", $(json "$cfg"), \"mcp\", \"serve\"], \"directTools\": true}}}"
+	echo "   {\"mcpServers\": {\"memory\": {\"command\": $(json "$bin"), \"args\": [\"--config\", $(json "$cfg"), \"mcp\", \"serve\", \"--caller\", $(json "$agent")], \"directTools\": true}}}"
 	;;
 opencode)
 	echo "   Add to ~/.config/opencode/opencode.json:"
-	echo "   {\"mcp\": {\"memory\": {\"type\": \"local\", \"command\": [$(json "$bin"), \"--config\", $(json "$cfg"), \"mcp\", \"serve\"], \"enabled\": true}}}"
+	echo "   {\"mcp\": {\"memory\": {\"type\": \"local\", \"command\": [$(json "$bin"), \"--config\", $(json "$cfg"), \"mcp\", \"serve\", \"--caller\", $(json "$agent")], \"enabled\": true}}}"
 	;;
 codex)
 	echo "   Add to ~/.codex/config.toml:"
-	printf '   [mcp_servers.memory]\n   command = %s\n   args = ["--config", %s, "mcp", "serve"]\n' "$(json "$bin")" "$(json "$cfg")"
+	printf '   [mcp_servers.memory]\n   command = %s\n   args = ["--config", %s, "mcp", "serve", "--caller", %s]\n' "$(json "$bin")" "$(json "$cfg")" "$(json "$agent")"
 	;;
 *)
 	echo "   Add a stdio MCP server named 'memory' with this command:"
-	echo "   $bin --config $cfg mcp serve"
+	echo "   $bin --config $cfg mcp serve --caller $agent"
 	;;
 esac
 echo "4. Turn off $agent's own memory integration for the same store, restart $agent, and ask it to run memory_stats."

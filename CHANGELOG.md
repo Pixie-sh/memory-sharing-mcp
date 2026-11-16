@@ -10,6 +10,9 @@ also lists the pull requests and commits it contains.
 ### Added
 
 - Landing page, `docs/index.html`, for GitHub Pages.
+- Caller nickname in the service log: `mcp serve --caller NAME` (or
+  `MSM_CALLER`), or an `X-Caller` header on HTTP, adds `caller` to each `call`
+  log line. It is self-reported and does not affect authorization.
 
 ## [0.0.1] - 2026-11-10
 

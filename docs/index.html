@@ -203,7 +203,7 @@ footer { border-top: 1px solid var(--r); box-shadow: 0 -2px 0 -1px var(--b); pad
       <div><h3>One owner</h3><p><code>http serve</code> takes an exclusive lock on the store. A second owner refuses to start.</p></div>
       <div><h3>One call at a time</h3><p>Operations reach the provider strictly in order. Recall updates the store too, so even reads are serialized.</p></div>
       <div><h3>No replayed writes</h3><p>If a write's outcome is unknown, the call is reported as <code>indeterminate</code> and never retried automatically.</p></div>
-      <div><h3>Every write has an author</h3><p>Each agent can have its own API key. New memories record the key that wrote them as <code>agent_id</code>.</p></div>
+      <div><h3>Every write has an author</h3><p>Each agent can have its own API key. New memories record the key that wrote them as <code>agent_id</code>, and an optional <code>--caller</code> nickname labels each call in the service log, even when agents share a key.</p></div>
       <div><h3>Roles per key</h3><p>Read-only, read-write and maintenance. Delete and consolidation stay off until you enable them.</p></div>
       <div><h3>Swappable store</h3><p>Stores plug in as providers. Mnemosyne works today; results follow mem0's memory format whichever store is behind it.</p></div>
     </div>
@@ -231,7 +231,7 @@ footer { border-top: 1px solid var(--r); box-shadow: 0 -2px 0 -1px var(--b); pad
     <div class="head">
       <span class="label">Connect</span>
       <h2>Set up once per machine, then one entry per agent.</h2>
-      <p>From a checkout, <code>make setup</code> walks through the store, the key and the service. <code>make gen-config</code> then gives each agent its own key and config. By hand, each agent needs one stdio server entry:</p>
+      <p>From a checkout, <code>make setup</code> walks through the store, the key and the service. <code>make gen-config</code> then gives each agent its own key and config, named in the log by <code>--caller</code>. By hand, each agent needs one stdio server entry:</p>
     </div>
     <div>
       <div class="tabs" role="tablist" aria-label="Agent">
@@ -284,11 +284,11 @@ footer { border-top: 1px solid var(--r); box-shadow: 0 -2px 0 -1px var(--b); pad
 <script>
 (function () {
   var snippets = {
-    claude: ['# all projects', 'claude mcp add --scope user memory -- memory-sharing-mcp mcp serve'],
-    pi: ['# ~/.pi/agent/mcp-adapter.json (pi-mcp-adapter)', '{\n  "mcpServers": {\n    "memory": { "command": "memory-sharing-mcp", "args": ["mcp", "serve"], "directTools": true }\n  }\n}'],
-    opencode: ['# ~/.config/opencode/opencode.json', '{\n  "mcp": {\n    "memory": { "type": "local", "command": ["memory-sharing-mcp", "mcp", "serve"], "enabled": true }\n  }\n}'],
-    codex: ['# ~/.codex/config.toml', '[mcp_servers.memory]\ncommand = "memory-sharing-mcp"\nargs = ["mcp", "serve"]'],
-    other: ['# any MCP client: a stdio server', 'command: memory-sharing-mcp\nargs:    mcp serve\n\n# or Streamable HTTP, with the key in that client\'s config\nhttp://127.0.0.1:8790/mcp\nAuthorization: Bearer <key>']
+    claude: ['# all projects', 'claude mcp add --scope user memory -- memory-sharing-mcp mcp serve --caller claude-code'],
+    pi: ['# ~/.pi/agent/mcp-adapter.json (pi-mcp-adapter)', '{\n  "mcpServers": {\n    "memory": { "command": "memory-sharing-mcp", "args": ["mcp", "serve", "--caller", "pi"], "directTools": true }\n  }\n}'],
+    opencode: ['# ~/.config/opencode/opencode.json', '{\n  "mcp": {\n    "memory": { "type": "local", "command": ["memory-sharing-mcp", "mcp", "serve", "--caller", "opencode"], "enabled": true }\n  }\n}'],
+    codex: ['# ~/.codex/config.toml', '[mcp_servers.memory]\ncommand = "memory-sharing-mcp"\nargs = ["mcp", "serve", "--caller", "codex"]'],
+    other: ['# any MCP client: a stdio server', 'command: memory-sharing-mcp\nargs:    mcp serve --caller <nickname>\n\n# or Streamable HTTP, with the key in that client\'s config\nhttp://127.0.0.1:8790/mcp\nAuthorization: Bearer <key>\nX-Caller: <nickname>       # optional']
   };
   var pre = document.getElementById('snip-pre');
   var panel = document.getElementById('snip');
