@@ -488,11 +488,14 @@ func TestRestartsExhaustedIsPermanent(t *testing.T) {
 	if g.Ready() {
 		t.Fatal("ready after giving up")
 	}
-	select {
-	case <-g.Dead():
-	default:
-		t.Fatal("Dead not closed after giving up")
-	}
+	waitFor(t, "Dead closed after giving up", func() bool {
+		select {
+		case <-g.Dead():
+			return true
+		default:
+			return false
+		}
+	})
 	if n := starts.Load(); n != 3 {
 		t.Fatalf("starts = %d, want 3", n)
 	}
