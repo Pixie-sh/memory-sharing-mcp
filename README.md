@@ -1,29 +1,34 @@
 # memory-sharing-mcp
 
-Share one agent memory store between several AI agents (Pi, Claude Code,
-OpenCode, Codex, and any other MCP client) through one authenticated MCP and
-REST service.
+Serve **one memory to many agents**. Pi, Claude Code, OpenCode, Codex, and any
+other MCP client read and write the same memory store through one
+authenticated MCP and REST service, on one machine or
+[across machines](#across-machines).
 
 One process, `http serve`, owns the store. Every agent talks to it, either over
 Streamable HTTP MCP or through a small stdio adapter (`mcp serve`). No agent
 opens the database directly, so they all go through one pinned runtime, one set
 of API keys, and one place that records who wrote what.
 
-Memory stores are plugged in as **providers**. The first provider is
-[Mnemosyne](https://github.com/AxDSan/mnemosyne); see
-[Adding a provider](#adding-a-provider).
+Memory stores are plugged in as **providers**. Two are included:
+[Mnemosyne](https://github.com/AxDSan/mnemosyne) and
+[mem0](https://github.com/mem0ai/mem0). [Choose a provider](#choose-a-provider)
+compares them; [Adding a provider](#adding-a-provider) covers more.
 
 > Status: local (loopback) use works and is tested with Mnemosyne, including the
-> macOS service. A [mem0](https://github.com/mem0ai/mem0) provider is planned.
-> The Linux systemd service is new and not yet tested on a real machine.
-> Not yet done: documented remote access through a reverse proxy.
+> macOS service. The mem0 provider is new: tested against mem0ai 2.2.1 with a
+> local Qdrant store, not yet in long-term use.
+> The Linux systemd service has run on one Ubuntu 26.04 container, including
+> across a reboot.
+> Access from other machines goes through an SSH tunnel or a TLS reverse proxy
+> you run ([Across machines](#across-machines)); both have been run on one
+> setup each.
 
 ## Quick start
 
 From nothing to agents with shared memory. From a checkout, `make setup` walks
-through all of it: it asks for the provider (only Mnemosyne is available today),
-new or existing store, and the Mnemosyne interpreter, offering to install it
-with `uv`; then it writes the config, creates the store if new, installs the
+through all of it: it asks for the provider (Mnemosyne or mem0), its Python
+interpreter, offering to install it with `uv`, and a new or existing store; then it writes the config, creates the store if new, installs the
 service, and runs `make gen-config` for your first agent. An existing config is
 kept. By hand, steps 1–5 happen once per machine.
 
@@ -60,6 +65,82 @@ memory-sharing-mcp install
 
 6. Connect your agents: see [Agents setup](#agents-setup).
 
+## Choose a provider
+
+The gateway serves one store, and the provider decides what kind. Both give
+agents the same five operations and the same result format, so you can decide
+on how you want memory stored and what you are willing to run.
+
+| | [Mnemosyne](https://github.com/AxDSan/mnemosyne) | [mem0](https://github.com/mem0ai/mem0) |
+| --- | --- | --- |
+| Pick it when | You want one local file and nothing else to run | You already use mem0, or want your own embedding model or vector database |
+| Storage | One SQLite file, `mnemosyne.db` | A vector store you configure (Qdrant and others), plus `history.db`, a change log |
+| Models | Comes with its install | An embedder and an LLM you choose, hosted or local |
+| Write | Stored as given, entities extracted | Stored as given. mem0's own LLM fact extraction is turned off |
+| Recall | Vector similarity, full-text match, and importance | Vector similarity |
+| Consolidation | `sleep` merges older working memories into episodic summaries | None; `sleep` returns an error |
+| Forget | Deletes, or hides memories already consolidated | Deletes |
+| Scope | One session; the API key is recorded as author | One `user_id`; the API key is recorded as `agent_id` |
+| Tested | 3.15.1, in daily use | 2.2.1 with local Qdrant, new |
+
+```text
+              remember(text)                       recall(query)
+
+Mnemosyne     text ─► embed + index ─► working     query ─► vector + full-text + importance
+                                       memory                     │
+                                         │ sleep                  ▼
+                                         ▼                  ranked memories
+                                    episodic memory
+                              [ one SQLite file: text, vectors, full-text index ]
+
+mem0          text ─► embed ─► vector store        query ─► embed ─► vector search
+                               (Qdrant, ...)                      │
+                                                                  ▼
+                                                            ranked memories
+                              [ vector store you configure ] + [ history.db change log ]
+```
+
+The Mnemosyne column describes its 3.15.1 release as the gateway uses it; its
+own documentation is the reference for the internals.
+
+**Start with Mnemosyne**
+
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then
+   `uv tool install mnemosyne-memory==3.15.1`
+   ([PyPI](https://pypi.org/project/mnemosyne-memory/),
+   [source and documentation](https://github.com/AxDSan/mnemosyne)).
+2. Follow the [Quick start](#quick-start) from step 2.
+
+**Start with mem0**
+
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then
+   create an environment with `mem0ai`
+   ([PyPI](https://pypi.org/project/mem0ai/),
+   [open-source overview](https://docs.mem0.ai/open-source/overview)):
+
+   ```bash
+   uv venv ~/.local/share/memory-sharing-mcp/mem0-env
+   uv pip install --python ~/.local/share/memory-sharing-mcp/mem0-env/bin/python mem0ai==2.2.1
+   ```
+
+2. Choose an [embedder](https://docs.mem0.ai/components/embedders/overview)
+   and a [vector store](https://docs.mem0.ai/components/vectordbs/overview),
+   and add to the same environment whatever they need. For example, local
+   models through [Ollama](https://ollama.com/download) need its Python
+   package (`uv pip install --python <that python> ollama`) and the Ollama app
+   running. [Qdrant](https://qdrant.tech/documentation/) with a local `path`
+   needs nothing more.
+3. Write the config as in [Choose a store](#choose-a-store), run
+   `memory-sharing-mcp store init`, and continue the
+   [Quick start](#quick-start) from step 4.
+
+`make setup` does either path for you. `store init`, `install`, and
+`http serve` first check that the configured interpreter exists and has the
+provider's package at the required version, and print the install command
+when it does not. A mem0 config that cannot be loaded (a missing model
+package, an unreachable model server, no vector store location) stops
+startup with mem0's own error.
+
 ## Choose a store
 
 The gateway serves exactly one store, chosen by `provider` and that provider's
@@ -79,9 +160,52 @@ sqlite3 ~/.pi/agent/mnemosyne/mnemosyne.db ".backup '/new/place/mnemosyne.db'"
 **A new Mnemosyne store.** Set `mnemosyne.data_dir` to an empty or missing
 directory and run `memory-sharing-mcp store init`.
 
-**mem0.** Not available yet. A mem0 provider is planned. It will take a
-`"mem0"` section pointing at an existing mem0 setup (its vector store, history
-database, and models) or create a new one with `store init`.
+**mem0.** Set `provider` to `mem0`, and give mem0's own configuration (its
+models and its vector store) under `mem0.config`:
+
+```json
+{
+  "provider": "mem0",
+  "mem0": {
+    "data_dir": "~/.local/share/memory-sharing-mcp/mem0",
+    "python": "~/.local/share/memory-sharing-mcp/mem0-env/bin/python",
+    "config": {
+      "llm": {"provider": "ollama", "config": {"model": "llama3.1"}},
+      "embedder": {"provider": "ollama", "config": {"model": "nomic-embed-text"}},
+      "vector_store": {"provider": "qdrant", "config": {
+        "path": "~/.local/share/memory-sharing-mcp/mem0/qdrant",
+        "embedding_model_dims": 768
+      }}
+    }
+  }
+}
+```
+
+- `mem0.config` is passed to mem0 unchanged; see
+  [mem0's documentation](https://docs.mem0.ai) for the providers and their
+  fields. `embedding_model_dims` must match the
+  embedder. If it holds an API key, keep the config file private (`chmod 600`).
+- mem0 needs an `llm` as well as an `embedder` to start, though the gateway
+  never calls the LLM: memories are stored as given, one per `remember`, not
+  rewritten into extracted facts.
+- Where memories are stored is always stated in `mem0.config.vector_store`:
+  the gateway refuses to start without it rather than fall back to mem0's
+  default, a Qdrant store under `/tmp`. For Qdrant, give a `path` (absolute or
+  starting with `~/`), a `host` and `port`, or a `url` and `api_key`. The
+  gateway keeps mem0's `history.db` in `data_dir`. For a new store, run
+  `memory-sharing-mcp store init`.
+- With Qdrant, `http serve` also refuses to start when the configured location
+  has no collection, instead of letting mem0 create an empty one after a typo
+  or a moved directory. Other vector stores do not have this check yet.
+- mem0's process gets a minimal environment. Put what its models need in
+  `mem0.env`, for example `{"OLLAMA_HOST": "http://10.0.0.5:11434"}`, a
+  proxy, or a model cache directory.
+- For an existing mem0 setup, point `data_dir` at the directory holding its
+  `history.db` and put its vector store in `mem0.config`. Memories are read
+  and written under one mem0 `user_id` (`mem0.user_id`); the API key that wrote
+  a memory is recorded as its `agent_id`.
+- mem0's usage telemetry is turned off.
+- `sleep` is not supported, and `forget` deletes outright.
 
 Changing the store means editing the config and restarting the service
 (below). Agents need no change, because they only talk to the gateway.
@@ -112,6 +236,9 @@ scripts ── REST ─────────────────┤
   reaped, with backoff and a cap. When the cap is reached, `http serve` exits
   with an error so the service manager starts a fresh process, instead of
   answering `unavailable` forever.
+- **Any machine, one store.** Agents on the same machine connect to loopback.
+  Agents elsewhere reach the same service through a tunnel or proxy; see
+  [Across machines](#across-machines).
 - **Not retried by MCP clients.** On MCP, every operation failure is a tool
   error on HTTP 200, because some clients retry 408/429/5xx automatically and
   could replay a write. Only a missing or invalid key (401) or a rejected
@@ -123,6 +250,9 @@ scripts ── REST ─────────────────┤
 - macOS or Linux. Windows is not supported.
 - For the Mnemosyne provider: an installation of `mnemosyne-memory`, for example
   `uv tool install mnemosyne-memory==3.15.1`. The version tested is 3.15.1.
+- For the mem0 provider: an environment with `mem0ai` and whatever its
+  configured models need. The version tested is 2.2.1. See
+  [Choose a provider](#choose-a-provider).
 
 ## Install
 
@@ -185,11 +315,17 @@ be absolute or start with `~/`.
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `listen` | `127.0.0.1:8790` | Loopback address for `http serve`. Other addresses are refused. |
-| `provider` | `mnemosyne` | Which memory provider to use. |
+| `provider` | `mnemosyne` | Which memory provider to use: `mnemosyne` or `mem0`. |
 | `mnemosyne.data_dir` | required | Directory containing `mnemosyne.db`. `http serve` refuses to start if the file is missing, rather than silently creating an empty store; create one with `store init`. |
 | `mnemosyne.python` | required | Interpreter of the `mnemosyne-memory` environment. |
 | `mnemosyne.session` | `default` | Mnemosyne session to read and write. Pi uses `default`. |
 | `mnemosyne.version` | `3.15.1` | Exact `mnemosyne-memory` version required. Raising it means running an untested version. |
+| `mem0.data_dir` | required | Directory containing mem0's `history.db`. As with Mnemosyne, `http serve` refuses a missing store. |
+| `mem0.python` | required | Interpreter of the `mem0ai` environment. |
+| `mem0.user_id` | `default` | mem0 `user_id` to read and write. No whitespace. |
+| `mem0.version` | `2.2.1` | Exact `mem0ai` version required. Raising it means running an untested version. |
+| `mem0.config` | required | mem0's own configuration (`llm`, `embedder`, `vector_store`), passed through. `vector_store` must say where memories are stored. See [Choose a store](#choose-a-store). |
+| `mem0.env` | none | Extra environment variables for mem0's process, as an object of strings. |
 | `state_dir` | `~/.local/state/memory-sharing-mcp` | Key registry and owner lock. |
 | `registry` | `<state_dir>/keys.json` | Key registry (hashes only). |
 | `credentials_dir` | `~/.config/memory-sharing-mcp/credentials` | Where `mcp keygen` saves new keys. |
@@ -236,7 +372,7 @@ memory-sharing-mcp version
 
 `install` takes `--bin-dir DIR` (default `~/.local/bin`) and the global
 `--config PATH`, which the service keeps using. It checks that the config and
-store exist first. The service is `sh.pixie.memory-sharing-mcp`.
+store exist and that the provider is installed first. The service is `sh.pixie.memory-sharing-mcp`.
 
 On macOS it is a LaunchAgent that logs to `~/Library/Logs/memory-sharing-mcp.log`:
 
@@ -380,6 +516,57 @@ project gotchas with `memory_remember`. Keep entries concise; never save secrets
   the agent can retry once the service is up.
 - Restart the agent after changing its MCP config.
 
+## Across machines
+
+The point of the gateway is one memory for all your agents, wherever they run:
+a laptop, a workstation, a CI runner, a server. The store and `http serve`
+live on one machine. Agents on other machines connect to it with their own
+API key. The service itself listens on loopback only and does not terminate
+TLS, so the network path is yours to provide. Two ways:
+
+**SSH tunnel.** Nothing to configure on the server. On the other machine:
+
+```bash
+ssh -N -L 8790:127.0.0.1:8790 user@memory-host
+```
+
+Agents there then use `http://127.0.0.1:8790` as if the service were local.
+
+**TLS reverse proxy.** Put a proxy on the server in front of
+`127.0.0.1:8790`. It must send a loopback `Host` header upstream, because the
+service rejects any other. With
+[Caddy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy):
+
+```text
+memory.example.com {
+	reverse_proxy 127.0.0.1:8790 {
+		header_up Host {upstream_hostport}
+	}
+}
+```
+
+Either way, on each remote machine:
+
+1. Install the `memory-sharing-mcp` binary. It needs no provider or store there.
+2. On the server, create a key for that machine
+   (`memory-sharing-mcp mcp keygen --name ci-runner`) and copy the key file
+   over a secure channel, with mode `0600`.
+3. Write its config with only the client side, and register the agents as in
+   [Agents setup](#agents-setup):
+
+   ```json
+   {
+     "endpoint": "https://memory.example.com/mcp",
+     "credential_file": "~/.config/memory-sharing-mcp/credentials/key_....key"
+   }
+   ```
+
+`endpoint` must be `https`, or `http` on a loopback address (the tunnel).
+Every request carries the key, and revoking it on the server cuts that
+machine off within about two seconds. Anyone who can reach the proxy can try
+keys, so limit who can reach it (a private network, a VPN, or the proxy's own
+access rules).
+
 ## REST
 
 `POST /v1/{recall,remember,stats,forget,sleep}` with a JSON body and
@@ -443,8 +630,8 @@ Errors are `{"error": "<class>", "message": "..."}`:
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 - The service listens on loopback only and does not terminate TLS. Remote
-  access is meant to go through a reverse proxy or tunnel you configure
-  (documentation pending).
+  access goes through a tunnel or reverse proxy you configure; see
+  [Across machines](#across-machines).
 - Every request is authenticated, including each call on an MCP session.
   Requests with a non-loopback `Host` header are rejected (DNS rebinding).
 - Secrets never appear in logs, process arguments, or URLs. Logs contain no
@@ -464,7 +651,10 @@ results as `provider.Memory` values with its own IDs. The gateway does all
 validation, authorization, queueing, restarts, and ID prefixing. To add one:
 
 1. Add a package under `internal/provider/<name>`. Return `*provider.OpError`
-   for errors that leave it usable, and any other error when it is gone.
+   for errors that leave it usable, and any other error when it is gone. For a
+   store with a Python library, write only the script: `internal/provider/pyproc`
+   runs it as a child process and handles the protocol, timeouts, and kills
+   (see `internal/provider/mnemosyne`).
 2. Add a config section and a `case` in `cmd/memory-sharing-mcp/providers.go`
    that returns its starter and the store path the owner lock is keyed on.
 
@@ -488,14 +678,16 @@ and commits since the previous tag. A tag with a suffix, such as
 
 The Mnemosyne tests against a real installation run when `MSM_TEST_PYTHON` and
 `MSM_TEST_DB` point at the interpreter and a database copy. Never use a live
-store as a test fixture.
+store as a test fixture. The mem0 tests run when `MSM_TEST_MEM0_PYTHON` points
+at the interpreter of a `mem0ai` environment; they use temporary stores and a
+local stand-in for the embedding model, so they need no API key or network.
 
 ## Credits
 
 - [Mnemosyne](https://github.com/AxDSan/mnemosyne) by Abdias J (MIT), the
   memory engine behind the first provider.
-- [mem0](https://github.com/mem0ai/mem0), whose memory format the result
-  contract follows.
+- [mem0](https://github.com/mem0ai/mem0) (Apache-2.0), the engine behind the
+  second provider, whose memory format the result contract follows.
 - The [Model Context Protocol](https://modelcontextprotocol.io), created by
   [Anthropic](https://www.anthropic.com), and its
   [official Go SDK](https://github.com/modelcontextprotocol/go-sdk).

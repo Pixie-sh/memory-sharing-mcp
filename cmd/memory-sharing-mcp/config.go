@@ -18,6 +18,7 @@ type config struct {
 	Listen         string          `json:"listen"`
 	Provider       string          `json:"provider"`
 	Mnemosyne      mnemosyneConfig `json:"mnemosyne"`
+	Mem0           mem0Config      `json:"mem0"`
 	StateDir       string          `json:"state_dir"`
 	Registry       string          `json:"registry"`
 	CredentialsDir string          `json:"credentials_dir"`
@@ -34,6 +35,21 @@ type mnemosyneConfig struct {
 	Python  string `json:"python"`   // interpreter of the mnemosyne-memory environment; required
 	Session string `json:"session"`  // default "default", as Pi uses
 	Version string `json:"version"`  // exact mnemosyne-memory version; default the tested one
+}
+
+// mem0Config configures the "mem0" provider.
+type mem0Config struct {
+	DataDir string `json:"data_dir"` // contains history.db; required
+	Python  string `json:"python"`   // interpreter of the mem0ai environment; required
+	UserID  string `json:"user_id"`  // mem0 user_id memories are scoped to; default "default"
+	Version string `json:"version"`  // exact mem0ai version; default the tested one
+	// Config is mem0's own configuration object (llm, embedder, vector_store),
+	// passed through as is. Its vector_store is required: it says where
+	// memories are stored. It may hold API keys.
+	Config json.RawMessage `json:"config"`
+	// Env is extra environment for mem0's process, which otherwise gets only
+	// HOME: for example OLLAMA_HOST, HTTPS_PROXY, or a model cache path.
+	Env map[string]string `json:"env"`
 }
 
 // configPath resolves the config file: the --config flag, then $MSM_CONFIG, then the
@@ -98,7 +114,7 @@ func (c *config) finish() error {
 	def(&c.StateDir, filepath.Join(home, ".local", "state", "memory-sharing-mcp"))
 	def(&c.Registry, filepath.Join(c.StateDir, "keys.json"))
 	def(&c.CredentialsDir, filepath.Join(home, ".config", "memory-sharing-mcp", "credentials"))
-	for _, p := range []*string{&c.Mnemosyne.DataDir, &c.Mnemosyne.Python, &c.StateDir, &c.Registry, &c.CredentialsDir, &c.CredentialFile} {
+	for _, p := range []*string{&c.Mnemosyne.DataDir, &c.Mnemosyne.Python, &c.Mem0.DataDir, &c.Mem0.Python, &c.StateDir, &c.Registry, &c.CredentialsDir, &c.CredentialFile} {
 		if *p == "" {
 			continue
 		}

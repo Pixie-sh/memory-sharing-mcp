@@ -1,7 +1,8 @@
 // Package provider defines the contract between the gateway and a memory
 // provider: the store-specific process or library that runs memory operations.
 // The gateway owns validation, authorization, queueing, and restarts; a provider
-// only maps each operation to its store. Mnemosyne is in package mnemosyne.
+// only maps each operation to its store. Mnemosyne and mem0 are in packages
+// mnemosyne and mem0; package pyproc runs providers written as a Python script.
 package provider
 
 import (

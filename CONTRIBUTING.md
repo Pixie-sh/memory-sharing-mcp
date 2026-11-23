@@ -39,6 +39,13 @@ MSM_TEST_DB=/tmp/copy/mnemosyne.db go test ./internal/provider/mnemosyne/
 scripts/smoke.sh ~/.local/share/uv/tools/mnemosyne-memory/bin/python /tmp/copy/mnemosyne.db
 ```
 
+If you change the mem0 provider, run its tests against a real `mem0ai`
+installation (they create temporary stores and need no API key):
+
+```bash
+MSM_TEST_MEM0_PYTHON=~/.local/share/memory-sharing-mcp/mem0-env/bin/python go test ./internal/provider/mem0/
+```
+
 Never point a test at a live store. To try a change on your own machine,
 `make install && make logs` deploys the checkout to the local service.
 

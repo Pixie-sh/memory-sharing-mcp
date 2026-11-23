@@ -205,7 +205,7 @@ footer { border-top: 1px solid var(--r); box-shadow: 0 -2px 0 -1px var(--b); pad
       <div><h3>No replayed writes</h3><p>If a write's outcome is unknown, the call is reported as <code>indeterminate</code> and never retried automatically.</p></div>
       <div><h3>Every write has an author</h3><p>Each agent can have its own API key. New memories record the key that wrote them as <code>agent_id</code>, and an optional <code>--caller</code> nickname labels each call in the service log, even when agents share a key.</p></div>
       <div><h3>Roles per key</h3><p>Read-only, read-write and maintenance. Delete and consolidation stay off until you enable them.</p></div>
-      <div><h3>Swappable store</h3><p>Stores plug in as providers. Mnemosyne works today; results follow mem0's memory format whichever store is behind it.</p></div>
+      <div><h3>Swappable store</h3><p>Stores plug in as providers. Mnemosyne and mem0 are included; results follow mem0's memory format whichever store is behind it.</p></div>
     </div>
   </section>
 
@@ -269,8 +269,8 @@ footer { border-top: 1px solid var(--r); box-shadow: 0 -2px 0 -1px var(--b); pad
     </div>
     <ul class="status">
       <li><span class="tag ok">Works</span><span>Local use on loopback with the Mnemosyne provider, including the macOS service.</span></li>
-      <li><span class="tag">Untested</span><span>The Linux systemd user unit is new and has not run on a real machine.</span></li>
-      <li><span class="tag">Planned</span><span>A mem0 provider.</span></li>
+      <li><span class="tag">New</span><span>The mem0 provider, tested with mem0ai 2.2.1 and a local Qdrant store; not yet run as a long-lived service.</span></li>
+      <li><span class="tag">New</span><span>The Linux systemd user unit has run on one Ubuntu 26.04 container, including across a reboot.</span></li>
       <li><span class="tag">Not yet</span><span>Documented remote access. The service listens on loopback only, so sharing one store across machines means a reverse proxy or tunnel you configure yourself.</span></li>
     </ul>
   </section>

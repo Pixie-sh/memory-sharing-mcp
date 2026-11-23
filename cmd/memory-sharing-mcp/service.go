@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"flag"
@@ -48,6 +49,9 @@ func doInstall(binDir, cfgPath string, cfg config, stdout io.Writer) error {
 		return err
 	}
 	if err := checkStore(db); err != nil {
+		return err
+	}
+	if err := checkInstall(context.Background(), cfg); err != nil {
 		return err
 	}
 	dir, err := absPath(binDir)

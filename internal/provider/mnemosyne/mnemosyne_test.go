@@ -7,146 +7,34 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/pixie-sh/memory-sharing-mcp/internal/provider"
+	"github.com/pixie-sh/memory-sharing-mcp/internal/provider/pyproc"
 )
 
-// fake replies to each request according to its op, standing in for Mnemosyne.
-const fake = `
-import json, sys
-print(json.dumps({"id": 0, "ok": True, "result": {}}), flush=True)
-for line in sys.stdin:
-    req = json.loads(line)
-    op = req["op"]
-    if op == "echo":
-        print(json.dumps({"id": req["id"], "ok": True, "result": req["args"]}), flush=True)
-    elif op == "oops":
-        print(json.dumps({"id": req["id"], "ok": False, "error": "ValueError: bad"}), flush=True)
-    elif op == "hang":
-        sys.stdin.readline()
-    elif op == "wrongid":
-        print(json.dumps({"id": 999, "ok": True, "result": {}}), flush=True)
-    elif op == "garbage":
-        print("not json", flush=True)
-    elif op == "argv":
-        print(json.dumps({"id": req["id"], "ok": True, "result": sys.argv[1:]}), flush=True)
-    elif op == "exit":
-        sys.exit(3)
-`
-
-func python(t *testing.T) string {
-	t.Helper()
-	p, err := exec.LookPath("python3")
-	if err != nil {
-		t.Skip("python3 not found")
-	}
-	return p
-}
-
-func startFake(t *testing.T, src string) *Backend {
-	t.Helper()
-	b, err := start(context.Background(), Config{Python: python(t), Stderr: io.Discard}, src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { b.Close(context.Background()) })
-	return b
-}
-
-func TestCallAndOpError(t *testing.T) {
-	b := startFake(t, fake)
-	got, err := b.Call(context.Background(), "echo", map[string]string{"q": "x"})
-	if err != nil || string(got) != `{"q": "x"}` {
-		t.Fatalf("echo = %s, %v", got, err)
-	}
-	_, err = b.Call(context.Background(), "oops", nil)
-	var opErr *provider.OpError
-	if !errors.As(err, &opErr) || opErr.Msg != "ValueError: bad" {
-		t.Fatalf("oops err = %v", err)
-	}
-	if _, err := b.Call(context.Background(), "echo", 1); err != nil {
-		t.Fatalf("backend unusable after OpError: %v", err)
-	}
-}
-
-func TestVersionAndSessionArgs(t *testing.T) {
+func TestProcessArgs(t *testing.T) {
 	for _, tc := range []struct {
 		cfg  Config
-		want string
+		want []string
 	}{
-		{Config{}, `["` + TestedVersion + `", "default", "open"]`},
-		{Config{Version: "9.9.9", Session: "team", Create: true}, `["9.9.9", "team", "create"]`},
+		{Config{DataDir: "/d"}, []string{TestedVersion, "default", "open"}},
+		{Config{DataDir: "/d", Version: "9.9.9", Session: "team", Create: true}, []string{"9.9.9", "team", "create"}},
 	} {
-		tc.cfg.Python, tc.cfg.Stderr = python(t), io.Discard
-		b, err := start(context.Background(), tc.cfg, fake)
-		if err != nil {
-			t.Fatal(err)
+		got := process(tc.cfg, "src")
+		if !slices.Equal(got.Args, tc.want) || !slices.Equal(got.Env, []string{"MNEMOSYNE_DATA_DIR=/d"}) || got.Script != "src" {
+			t.Errorf("process(%+v) = %+v; want args %v", tc.cfg, got, tc.want)
 		}
-		got, err := b.Call(context.Background(), "argv", nil)
-		b.Close(context.Background())
-		if err != nil || string(got) != tc.want {
-			t.Errorf("argv = %s, %v; want %s", got, err, tc.want)
-		}
-	}
-}
-
-func TestFailuresKillBackend(t *testing.T) {
-	for _, op := range []string{"hang", "wrongid", "garbage", "exit"} {
-		t.Run(op, func(t *testing.T) {
-			b := startFake(t, fake)
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
-			if _, err := b.Call(ctx, op, nil); !errors.Is(err, provider.ErrIndeterminate) {
-				t.Fatalf("err = %v, want ErrIndeterminate", err)
-			}
-			select {
-			case <-b.Exited():
-			default:
-				t.Fatal("process not reaped after failure")
-			}
-			if _, err := b.Call(context.Background(), "echo", 1); !errors.Is(err, provider.ErrUnavailable) {
-				t.Fatalf("after failure err = %v, want ErrUnavailable", err)
-			}
-		})
-	}
-}
-
-func TestStartupFailure(t *testing.T) {
-	src := `import json; print(json.dumps({"id": 0, "ok": False, "error": "database not found: x"}))`
-	_, err := start(context.Background(), Config{Python: python(t), Stderr: io.Discard}, src)
-	if err == nil || !strings.Contains(err.Error(), "database not found") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestStartupTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	_, err := start(ctx, Config{Python: python(t), Stderr: io.Discard}, `import time; time.sleep(30)`)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// A forked child holding the pipes must not stop kill from reaping the backend.
-func TestStartupTimeoutWithForkedChild(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	t0 := time.Now()
-	_, err := start(ctx, Config{Python: python(t), Stderr: io.Discard}, `import os, time; os.fork(); time.sleep(30)`)
-	if !errors.Is(err, context.DeadlineExceeded) || time.Since(t0) > 10*time.Second {
-		t.Fatalf("err = %v after %v", err, time.Since(t0))
 	}
 }
 
 // realBackend starts the real script against a copy of MSM_TEST_DB (a
 // mnemosyne.db file, never the live store) using MSM_TEST_PYTHON.
-func realBackend(t *testing.T, db string) *Backend {
+func realBackend(t *testing.T, db string) *pyproc.Backend {
 	t.Helper()
 	py := os.Getenv("MSM_TEST_PYTHON")
 	if py == "" || db == "" {

@@ -13,6 +13,24 @@ also lists the pull requests and commits it contains.
 - Caller nickname in the service log: `mcp serve --caller NAME` (or
   `MSM_CALLER`), or an `X-Caller` header on HTTP, adds `caller` to each `call`
   log line. It is self-reported and does not affect authorization.
+- mem0 provider (`"provider": "mem0"`), tested with `mem0ai` 2.2.1. It takes
+  mem0's own configuration under `mem0.config`, stores memories as given
+  under one `user_id`, requires the vector store location to be configured,
+  and turns mem0's telemetry off. `sleep` is not supported. With Qdrant it
+  refuses to start on a location that has no collection. `mem0.env` passes
+  extra environment variables to mem0's process.
+  `make setup` offers it, and `version mem0` prints the tested version.
+- `store init`, `install`, and `http serve` check that the provider's
+  interpreter exists and has its package at the required version, and print
+  the install command when it does not.
+- README: a provider comparison with setup links, and how to reach the service
+  from other machines.
+
+### Changed
+
+- The Python child-process runner moved out of the Mnemosyne provider into
+  `internal/provider/pyproc`, which both providers use. No behavior change
+  for Mnemosyne.
 
 ## [0.0.1] - 2026-11-10
 

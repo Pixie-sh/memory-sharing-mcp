@@ -91,6 +91,40 @@ func TestMnemosyneConfig(t *testing.T) {
 	}
 }
 
+func TestMem0Config(t *testing.T) {
+	cfg, _ := setup(t, map[string]any{"provider": "mem0", "mem0": map[string]any{
+		"data_dir": "~/m0", "python": "/py", "user_id": "team",
+		"config": map[string]any{"embedder": map[string]any{"provider": "ollama"}},
+	}})
+	c, err := loadConfig(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	if c.Mem0.DataDir != filepath.Join(home, "m0") || c.Mem0.UserID != "team" || !strings.Contains(string(c.Mem0.Config), "ollama") {
+		t.Fatalf("mem0=%+v", c.Mem0)
+	}
+	if _, store, err := openProvider(c, io.Discard, false); err != nil || store != filepath.Join(home, "m0", "history.db") {
+		t.Fatalf("store=%q err=%v", store, err)
+	}
+	c.Mem0.UserID = "my team"
+	if _, _, err := openProvider(c, io.Discard, false); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Errorf("user_id with a space: err = %v", err)
+	}
+	c.Mem0.UserID, c.Mem0.Env = "team", map[string]string{"A=B": "x"}
+	if _, _, err := openProvider(c, io.Discard, false); err == nil || !strings.Contains(err.Error(), "mem0.env") {
+		t.Errorf("bad env name: err = %v", err)
+	}
+	cfg, _ = setup(t, map[string]any{"provider": "mem0"})
+	if code, _, errs := cli(t, cfg, "http", "serve"); code != 1 || !strings.Contains(errs, "needs mem0.data_dir and mem0.python") {
+		t.Errorf("code %d, stderr %q", code, errs)
+	}
+	var out, errs strings.Builder
+	if code := run(t.Context(), []string{"version", "mem0"}, strings.NewReader(""), &out, &errs); code != 0 || out.String() != "2.2.1\n" {
+		t.Fatalf("version mem0: code=%d out=%q", code, out.String())
+	}
+}
+
 func TestEndpointFollowsListen(t *testing.T) {
 	cfg, _ := setup(t, map[string]any{"listen": "127.0.0.1:9999"})
 	c, err := loadConfig(cfg, true)
@@ -317,5 +351,35 @@ func TestExplicitMissingConfigFails(t *testing.T) {
 	code := run(t.Context(), []string{"--config", filepath.Join(t.TempDir(), "missing.json"), "mcp", "keys", "list"}, strings.NewReader(""), &out, &errb)
 	if code == 0 || !strings.Contains(errb.String(), "does not exist") {
 		t.Fatalf("code %d, stderr %q; want failure naming the missing file", code, errb.String())
+	}
+}
+
+func TestCheckInstall(t *testing.T) {
+	py := filepath.Join(t.TempDir(), "python")
+	fake := func(body string) config {
+		if err := os.WriteFile(py, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return config{Provider: "mem0", Mem0: mem0Config{Python: py, Version: "2.2.1"}}
+	}
+	if err := checkInstall(t.Context(), fake("echo 2.2.1")); err != nil {
+		t.Error(err)
+	}
+	for body, want := range map[string]string{"echo 0.0.1": "0.0.1 found", "exit 1": "is not installed"} {
+		if err := checkInstall(t.Context(), fake(body)); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "uv pip install") {
+			t.Errorf("%s: %v", body, err)
+		}
+	}
+	if err := checkInstall(t.Context(), config{Provider: "mnemosyne", Mnemosyne: mnemosyneConfig{Python: "/nonexistent/py"}}); err == nil || !strings.Contains(err.Error(), "uv tool install mnemosyne-memory==") {
+		t.Error(err)
+	}
+	// A missing interpreter gets a venv command only where its path names one.
+	for py, want := range map[string]string{"/nonexistent/env/bin/python": "uv venv /nonexistent/env &&", "/nonexistent/bin/python3": "create that Python environment"} {
+		if err := checkInstall(t.Context(), config{Provider: "mem0", Mem0: mem0Config{Python: py}}); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v", py, err)
+		}
+	}
+	if err := checkInstall(t.Context(), config{Provider: "other"}); err == nil || !strings.Contains(err.Error(), "unknown provider") {
+		t.Error(err)
 	}
 }

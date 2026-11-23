@@ -25,6 +25,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pixie-sh/memory-sharing-mcp/internal/gateway"
 	"github.com/pixie-sh/memory-sharing-mcp/internal/keys"
+	"github.com/pixie-sh/memory-sharing-mcp/internal/provider/mem0"
 	"github.com/pixie-sh/memory-sharing-mcp/internal/provider/mnemosyne"
 	"github.com/pixie-sh/memory-sharing-mcp/internal/transport"
 )
@@ -72,9 +73,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return 0
 	}
 	// For scripts/setup.sh, so the install it offers matches the version the backend requires.
-	if len(rest) == 2 && rest[0] == "version" && rest[1] == "mnemosyne" {
-		fmt.Fprintln(stdout, mnemosyne.TestedVersion)
-		return 0
+	if len(rest) == 2 && rest[0] == "version" {
+		tested := map[string]string{"mnemosyne": mnemosyne.TestedVersion, "mem0": mem0.TestedVersion}
+		if v, ok := tested[rest[1]]; ok {
+			fmt.Fprintln(stdout, v)
+			return 0
+		}
 	}
 	var cmd string
 	var cargs []string
@@ -164,6 +168,9 @@ func httpServe(ctx context.Context, cfg config, log *slog.Logger, providerOut io
 		return err
 	}
 	if err := checkStore(db); err != nil {
+		return err
+	}
+	if err := checkInstall(ctx, cfg); err != nil {
 		return err
 	}
 	canon, err := filepath.EvalSymlinks(db)
@@ -289,6 +296,9 @@ func storeInit(ctx context.Context, cfg config, stdout, stderr io.Writer) error 
 	if _, err := os.Lstat(db); err == nil {
 		return fmt.Errorf("store %s already exists", db)
 	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := checkInstall(ctx, cfg); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(db), 0o700); err != nil {
