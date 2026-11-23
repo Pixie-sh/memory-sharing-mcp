@@ -115,6 +115,10 @@ func TestMem0Config(t *testing.T) {
 	if _, _, err := openProvider(c, io.Discard, false); err == nil || !strings.Contains(err.Error(), "mem0.env") {
 		t.Errorf("bad env name: err = %v", err)
 	}
+	c.Mem0.Env = map[string]string{"HOME": "/srv/other"}
+	if _, _, err := openProvider(c, io.Discard, false); err == nil || !strings.Contains(err.Error(), "set by the gateway") {
+		t.Errorf("reserved env name: err = %v", err)
+	}
 	cfg, _ = setup(t, map[string]any{"provider": "mem0"})
 	if code, _, errs := cli(t, cfg, "http", "serve"); code != 1 || !strings.Contains(errs, "needs mem0.data_dir and mem0.python") {
 		t.Errorf("code %d, stderr %q", code, errs)
@@ -374,7 +378,7 @@ func TestCheckInstall(t *testing.T) {
 		t.Error(err)
 	}
 	// A missing interpreter gets a venv command only where its path names one.
-	for py, want := range map[string]string{"/nonexistent/env/bin/python": "uv venv /nonexistent/env &&", "/nonexistent/bin/python3": "create that Python environment"} {
+	for py, want := range map[string]string{"/nonexistent/env/bin/python": "uv venv /nonexistent/env &&", "/no such/env/bin/python": "uv venv '/no such/env' && uv pip install --python '/no such/env/bin/python' ", "/nonexistent/bin/python3": "create that Python environment"} {
 		if err := checkInstall(t.Context(), config{Provider: "mem0", Mem0: mem0Config{Python: py}}); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v", py, err)
 		}

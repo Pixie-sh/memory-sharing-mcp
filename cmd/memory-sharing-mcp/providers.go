@@ -48,6 +48,10 @@ func openProvider(cfg config, stderr io.Writer, create bool) (provider.Starter, 
 			if k == "" || strings.Contains(k, "=") {
 				return nil, "", fmt.Errorf("mem0.env: invalid variable name %q", k)
 			}
+			// Set by the gateway: HOME locates ~/ paths in mem0.config, the rest the store.
+			if slices.Contains([]string{"HOME", "MEM0_DIR", "MEM0_TELEMETRY", "MSM_MEM0_CONFIG"}, k) {
+				return nil, "", fmt.Errorf("mem0.env: %s is set by the gateway; remove it", k)
+			}
 			env = append(env, k+"="+m.Env[k])
 		}
 		start := mem0.Starter(mem0.Config{
@@ -70,11 +74,11 @@ func checkInstall(ctx context.Context, cfg config) error {
 	case "mem0":
 		py, pkg, ver = cfg.Mem0.Python, "mem0ai", cmp.Or(cfg.Mem0.Version, mem0.TestedVersion)
 		// mem0ai has no command of its own, so it gets a plain environment instead of a uv tool.
-		install = fmt.Sprintf("uv pip install --python %s %s==%s", py, pkg, ver)
+		install = fmt.Sprintf("uv pip install --python %s %s==%s", shellQuote(py), pkg, ver)
 		if _, err := os.Stat(py); err != nil {
 			// Only a path shaped like a virtual environment's says where to create one.
 			if env, ok := strings.CutSuffix(py, "/bin/python"); ok {
-				install = fmt.Sprintf("uv venv %s && %s", env, install)
+				install = fmt.Sprintf("uv venv %s && %s", shellQuote(env), install)
 			} else {
 				install = "create that Python environment, then " + install
 			}
@@ -93,4 +97,14 @@ func checkInstall(ctx context.Context, cfg config) error {
 		return fmt.Errorf("%s %s found for %s, %s required; install it with: %s", pkg, got, py, ver, install)
 	}
 	return nil
+}
+
+// shellQuote makes s one word for a POSIX shell, so a printed command can be pasted as is.
+func shellQuote(s string) string {
+	if s != "" && !strings.ContainsFunc(s, func(r rune) bool {
+		return !(r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("/._-+=:,@%", r)))
+	}) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

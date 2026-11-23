@@ -196,7 +196,9 @@ models and its vector store) under `mem0.config`:
   `memory-sharing-mcp store init`.
 - With Qdrant, `http serve` also refuses to start when the configured location
   has no collection, instead of letting mem0 create an empty one after a typo
-  or a moved directory. Other vector stores do not have this check yet.
+  or a moved directory, and `store init` refuses a location that already has
+  one, so a new store never takes over an existing collection. Other vector
+  stores do not have these checks yet.
 - mem0's process gets a minimal environment. Put what its models need in
   `mem0.env`, for example `{"OLLAMA_HOST": "http://10.0.0.5:11434"}`, a
   proxy, or a model cache directory.
@@ -325,7 +327,7 @@ be absolute or start with `~/`.
 | `mem0.user_id` | `default` | mem0 `user_id` to read and write. No whitespace. |
 | `mem0.version` | `2.2.1` | Exact `mem0ai` version required. Raising it means running an untested version. |
 | `mem0.config` | required | mem0's own configuration (`llm`, `embedder`, `vector_store`), passed through. `vector_store` must say where memories are stored. See [Choose a store](#choose-a-store). |
-| `mem0.env` | none | Extra environment variables for mem0's process, as an object of strings. |
+| `mem0.env` | none | Extra environment variables for mem0's process, as an object of strings. `HOME`, `MEM0_DIR`, `MEM0_TELEMETRY` and `MSM_MEM0_CONFIG` are set by the gateway and refused. |
 | `state_dir` | `~/.local/state/memory-sharing-mcp` | Key registry and owner lock. |
 | `registry` | `<state_dir>/keys.json` | Key registry (hashes only). |
 | `credentials_dir` | `~/.config/memory-sharing-mcp/credentials` | Where `mcp keygen` saves new keys. |

@@ -215,6 +215,15 @@ func TestRealRoundTrip(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "qdrant-typo")); err == nil {
 		t.Fatal("backend created a store at the wrong location")
 	}
+
+	// store init with history.db gone but the collection still there: refuse
+	// rather than report the old collection as a new store.
+	if err := os.Remove(StorePath(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pyproc.Start(ctx, process(realConfig(t, dir, true), script)); err == nil || !strings.Contains(err.Error(), "already has a collection") {
+		t.Fatalf("create over an existing collection: err = %v", err)
+	}
 }
 
 // A memory of another user_id in the same collection is neither recalled nor forgotten.

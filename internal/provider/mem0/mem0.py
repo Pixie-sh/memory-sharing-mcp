@@ -14,7 +14,7 @@ import os
 import sys
 import traceback
 import uuid
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
 # Keep the protocol stream private: library prints (Python or C level) go to stderr.
 out = os.fdopen(os.dup(1), "w", buffering=1, encoding="utf-8")
@@ -39,7 +39,10 @@ history = os.path.join(data_dir, "history.db")
 if not data_dir or (MODE != "create" and not os.path.isfile(history)):
     fail(f"store not found: {history}")
 
-found_version = version("mem0ai")
+try:
+    found_version = version("mem0ai")
+except PackageNotFoundError:
+    fail(f"mem0ai is not installed for {sys.executable}")
 if found_version != expected_version:
     fail(f"mem0ai {found_version} found, {expected_version} required")
 
@@ -85,18 +88,22 @@ def qdrant_collection_exists():
 
 
 # mem0 silently creates an empty collection for a wrong location, as it does
-# for history.db; refuse that too.
+# for history.db; refuse that too. store init, in turn, refuses a collection
+# that already exists: it may be another store's, in use.
 # ponytail: checked for Qdrant only; other vector stores need their own
 # existence check here before they can be trusted not to start empty.
-if MODE != "create" and store["provider"] == "qdrant":
+if store["provider"] == "qdrant":
     try:
         found = qdrant_collection_exists()
     except Exception as e:
         traceback.print_exc()
         fail(f"mem0 vector store: {type(e).__name__}: {e}")
-    if not found:
+    if MODE != "create" and not found:
         fail("mem0.config.vector_store has no collection at the configured location; "
              "check it, or create a new store with store init")
+    if MODE == "create" and found:
+        fail("mem0.config.vector_store already has a collection at the configured location; "
+             "use that store, or give a new location (or collection_name) for a new one")
 
 from mem0 import Memory  # noqa: E402
 
@@ -192,7 +199,9 @@ for line in sys.stdin:
 
 # stdin closed: the gateway is shutting the provider down. Close the local
 # Qdrant client here; left to interpreter exit, its __del__ fails noisily.
-m.close()
+close = getattr(m, "close", None)
+if close:
+    close()
 close = getattr(getattr(m.vector_store, "client", None), "close", None)
 if close:
     close()

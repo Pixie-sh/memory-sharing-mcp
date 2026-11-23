@@ -47,7 +47,7 @@ else
 	echo "2. Runtime"
 	py=$(tilde "$(ask "Python of the $provider $version install" "$py_default")")
 	# mem0ai has no command of its own, so it gets a plain environment instead of a uv tool.
-	[ "$provider" = mem0 ] && install="uv venv ${py%/bin/python} && uv pip install --python $py mem0ai==$version"
+	[ "$provider" = mem0 ] && install="uv venv $(printf %q "${py%/bin/python}") && uv pip install --python $(printf %q "$py") mem0ai==$version"
 	if [ ! -f "$py" ] || [ ! -x "$py" ]; then
 		# A new mem0 environment is created where the path says: <env>/bin/python.
 		[ "$provider" != mem0 ] || [[ $py == */bin/python ]] ||
@@ -55,6 +55,9 @@ else
 		command -v uv >/dev/null || die "$py not found; install uv, then run: $install"
 		[ "$(ask "$py not found. Run '$install'? (y/n)" y)" = y ] || die "install $provider, then run setup again"
 		if [ "$provider" = mem0 ]; then
+			# A partial or foreign directory is left alone, not overwritten.
+			[ -z "$(ls -A "${py%/bin/python}" 2>/dev/null)" ] ||
+				die "${py%/bin/python} exists but has no working bin/python; remove it or give another path"
 			uv venv "${py%/bin/python}"
 			uv pip install --python "$py" "mem0ai==$version"
 		else
